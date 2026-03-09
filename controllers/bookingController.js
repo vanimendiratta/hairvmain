@@ -1,6 +1,23 @@
 const { Booking, TimeSlot, SubService } = require('../models');
 const { Op } = require('sequelize');
 
+const getBusinessHoursForDate = (dateString) => {
+    const day = new Date(`${dateString}T00:00:00`).getDay(); // 0=Sun,1=Mon,...6=Sat
+
+    // Monday closed
+    if (day === 1) {
+        return null;
+    }
+
+    // Tue-Fri: 09:00 - 20:00
+    if (day >= 2 && day <= 5) {
+        return { start: '09:00:00', end: '20:00:00' };
+    }
+
+    // Sat/Sun: 10:00 - 20:00
+    return { start: '10:00:00', end: '20:00:00' };
+};
+
 exports.getAvailableSlots = async (req, res) => {
     try {
         const { date, subServiceId } = req.query;
@@ -15,9 +32,15 @@ exports.getAvailableSlots = async (req, res) => {
         const duration = subService.duration; // minutes
         const slots = [];
 
-        // Define business hours
-        let currentTime = new Date(`${date}T09:00:00`);
-        const endTime = new Date(`${date}T17:00:00`);
+        // Define business hours by day
+        const hours = getBusinessHoursForDate(date);
+        if (!hours) {
+            // Monday is closed
+            return res.json([]);
+        }
+
+        let currentTime = new Date(`${date}T${hours.start}`);
+        const endTime = new Date(`${date}T${hours.end}`);
 
         const startOfDay = new Date(`${date}T00:00:00`);
         const endOfDay = new Date(`${date}T23:59:59`);
@@ -43,39 +66,23 @@ exports.getAvailableSlots = async (req, res) => {
 
         console.log(`[Slots Check] Date: ${date}, SubID: ${subServiceId}, Booked:`, bookedTimes);
 
-        // 1. If dynamic slots are configured, use them
-        if (subService.availableSlots && Array.isArray(subService.availableSlots) && subService.availableSlots.length > 0) {
+        // Always generate slots from business hours by weekday:
+        // Mon closed, Tue-Fri 09:00-20:00, Sat-Sun 10:00-20:00.
+        while (currentTime.getTime() + duration * 60000 <= endTime.getTime()) {
+            const hours = String(currentTime.getHours()).padStart(2, '0');
+            const minutes = String(currentTime.getMinutes()).padStart(2, '0');
+            const timeString = `${hours}:${minutes}`;
 
-            subService.availableSlots.forEach(slotTime => {
-                // Check if this specific time is booked
-                const isBooked = bookedTimes.includes(slotTime);
+            const isBooked = bookedTimes.includes(timeString);
 
-                if (!isBooked) {
-                    slots.push({
-                        time: slotTime,
-                        available: true
-                    });
-                }
-            });
-
-        } else {
-            // 2. Fallback to default 09:00 - 17:00 logic
-            while (currentTime < endTime) {
-                const hours = String(currentTime.getHours()).padStart(2, '0');
-                const minutes = String(currentTime.getMinutes()).padStart(2, '0');
-                const timeString = `${hours}:${minutes}`;
-
-                const isBooked = bookedTimes.includes(timeString);
-
-                if (!isBooked) {
-                    slots.push({
-                        time: timeString,
-                        available: true
-                    });
-                }
-
-                currentTime = new Date(currentTime.getTime() + duration * 60000);
+            if (!isBooked) {
+                slots.push({
+                    time: timeString,
+                    available: true
+                });
             }
+
+            currentTime = new Date(currentTime.getTime() + duration * 60000);
         }
 
         res.json(slots);

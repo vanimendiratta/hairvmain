@@ -2,7 +2,7 @@ const sendEmail = require('../utils/sendEmail');
 
 exports.sendEnquiry = async (req, res) => {
     try {
-        const { name, email, message } = req.body;
+        const { name, email, message, phone, pictureName, source } = req.body;
 
         if (!name || !email || !message) {
             return res.status(400).json({ message: "All fields are required" });
@@ -10,9 +10,12 @@ exports.sendEnquiry = async (req, res) => {
 
         // Email to Admin
         const adminEmail = process.env.EMAIL_USER; // Or specific admin email
+        const enquirySource = source === 'contact-page' ? 'Contact Page Request' : 'General Enquiry';
         const adminContent = `
-            <h1>New General Enquiry</h1>
+            <h1>New ${enquirySource}</h1>
             <p><strong>From:</strong> ${name} (${email})</p>
+            ${phone ? `<p><strong>Phone:</strong> ${phone}</p>` : ''}
+            ${pictureName ? `<p><strong>Uploaded Picture:</strong> ${pictureName}</p>` : ''}
             <p><strong>Message:</strong></p>
             <blockquote style="background: #f9f9f9; padding: 10px; border-left: 5px solid #ccc;">
                 ${message}
